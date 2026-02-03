@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Rounding Quiz Master</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f0f4f8;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    
+    /* Teacher Controls Area */
+    .teacher-zone {
+      background: #e9ecef;
+      border: 2px dashed #adb5bd;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+    }
+    .teacher-zone h3 { margin: 0 10px 0 0; color: #495057; font-size: 1rem; }
+
+    /* Student/Quiz Area */
+    .quiz-zone {
+      background: white;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      text-align: center;
+      max-width: 800px;
+      width: 100%;
+    }
+
+    .question-box {
+      font-size: 2.5rem;
+      font-weight: bold;
+      color: #333;
+      margin: 20px 0;
+      min-height: 60px;
+    }
+
+    .task-desc { font-size: 1.2rem; color: #666; margin-bottom: 20px; }
+
+    .input-area {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    input[type="number"] {
+      padding: 10px;
+      font-size: 1.5rem;
+      width: 200px;
+      text-align: center;
+      border: 3px solid #007bff;
+      border-radius: 8px;
+    }
+
+    /* Buttons */
+    .btn-gen { background-color: #6c757d; color: white; }
+    .btn-check { background-color: #28a745; color: white; font-size: 1.2rem; padding: 10px 30px; }
+    .btn-reset { background-color: #dc3545; color: white; }
+    
+    button {
+      border: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: transform 0.1s;
+    }
+    button:active { transform: scale(0.95); }
+
+    /* Feedback Popups */
+    .feedback {
+      font-size: 1.5rem;
+      font-weight: bold;
+      height: 40px;
+      margin-bottom: 10px;
+    }
+    .correct { color: #198754; animation: pop 0.3s ease; }
+    .wrong { color: #dc3545; animation: shake 0.3s ease; }
+
+    /* Canvas */
+    #canvas-container {
+      margin-top: 20px;
+      border-top: 2px solid #eee;
+      padding-top: 20px;
+      display: none; /* Hidden until first check */
+    }
+
+    @keyframes shake {
+      0% { transform: translateX(0); }
+      25% { transform: translateX(-10px); }
+      50% { transform: translateX(10px); }
+      75% { transform: translateX(-10px); }
+      100% { transform: translateX(0); }
+    }
+    @keyframes pop {
+      0% { transform: scale(0.8); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="teacher-zone">
+    <h3>👨‍🏫 Teacher Controls:</h3>
+    
+    <select id="genType">
+      <option value="decimal">Random Decimals</option>
+      <option value="integer">Random Integers</option>
+    </select>
+
+    <select id="roundMethod">
+      <option value="off">Round OFF</option>
+      <option value="up">Round UP</option>
+      <option value="down">Round DOWN</option>
+    </select>
+
+    <select id="targetType" onchange="toggleCount()">
+      <option value="sigfig">Sig Fig</option>
+      <option value="decimal">Decimal Places</option>
+      <option value="integer">Nearest Integer</option>
+      <option value="ten">Nearest 10</option>
+      <option value="hundred">Nearest 100</option>
+    </select>
+
+    <input type="number" id="targetCount" value="3" min="1" max="5" style="width: 50px; font-size: 1rem;">
+    
+    <button class="btn-gen" onclick="generateNewQuestion()">🎲 New Question</button>
+  </div>
+
+  <div class="quiz-zone">
+    <div id="taskDescription" class="task-desc">Click "New Question" to start</div>
+    <div id="numberDisplay" class="question-box">---</div>
+    
+    <div id="feedbackBox" class="feedback"></div>
+
+    <div class="input-area">
+      <input type="number" id="studentAnswer" placeholder="Answer..." step="any">
+      <button class="btn-check" onclick="checkAnswer()">Check</button>
+    </div>
+    
+    <div id="attemptsText" style="color:#777; font-size:0.9rem;">Attempts: 0/3</div>
+
+    <div id="canvas-container"></div>
+  </div>
+
+<script>
+// Game State
+let currentNum = 0;
+let correctAnswer = 0;
+let attempts = 0;
+let isSolved = false;
+let showHint = false; // Show line but not answer
+let showFull = false; // Show everything
+
+// Calculation Variables for p5
+let lowerBound, upperBound, midPoint, targetMethod;
+
+function setup() {
+  let c = createCanvas(800, 300);
+  c.parent('canvas-container');
+  textAlign(CENTER, CENTER);
+  textFont('Segoe UI');
+  noLoop(); // Only redraw when needed
+}
+
+function draw() {
+  background(255);
+  
+  if (!showHint && !showFull) return; // Draw nothing initially
+
+  // --- 1. Draw The Line ---
+  stroke(50);
+  strokeWeight(4);
+  let margin = 80;
+  let lineY = height / 2;
+  let lineStart = margin;
+  let lineEnd = width - margin;
+  let lineLen = lineEnd - lineStart;
+  
+  line(lineStart, lineY, lineEnd, lineY);
+
+  // Mapping
+  let range = upperBound - lowerBound;
+  if(range === 0) range = 1;
+  let getX = (val) => lineStart + ((val - lowerBound)/range) * lineLen;
+
+  let xLower = getX(lowerBound);
+  let xUpper = getX(upperBound);
+  let xTarget = getX(currentNum);
+  let xMid = getX(midPoint);
+
+  // --- 2. Draw Bounds (Always shown if Hint is active) ---
+  drawTick(xLower, lineY, lowerBound, "#d63384");
+  drawTick(xUpper, lineY, upperBound, "#198754");
+
+  // --- 3. Midpoint (Only for Round OFF) ---
+  if (targetMethod === 'off') {
+    stroke(200); strokeWeight(2);
+    line(xMid, lineY - 30, xMid, lineY + 30);
+    fill(100); noStroke(); textSize(12);
+    text(midPoint, xMid, lineY + 45);
+  }
+
+  // --- 4. User's Number Position (The "You are here" arrow) ---
+  // We show this in Hint mode so they know where they are relative to the fence
+  let userX = constrain(xTarget, lineStart, lineEnd);
+  drawArrow(userX, lineY - 50, "Number\n" + currentNum, "#0d6efd", false);
+
+  // --- 5. The Answer Arrow (ONLY if Solved or Failed 3 times) ---
+  if (showFull) {
+    let resultColor = targetMethod === 'off' ? "#6610f2" : (targetMethod === 'up' ? "#198754" : "#d63384");
+    let destX = getX(correctAnswer);
+    
+    // Trail line
+    stroke(resultColor); strokeWeight(3);
+    drawingContext.setLineDash([10, 10]);
+    line(userX, lineY, destX, lineY);
+    drawingContext.setLineDash([]);
+
+    // Arrow
+    drawArrow(destX, lineY + 50, "Answer\n" + correctAnswer, resultColor, true);
+  }
+}
+
+// --- Logic ---
+
+function generateNewQuestion() {
+  // Reset State
+  attempts = 0;
+  isSolved = false;
+  showHint = false;
+  showFull = false;
+  document.getElementById('studentAnswer').value = '';
+  document.getElementById('feedbackBox').innerHTML = '';
+  document.getElementById('feedbackBox').className = 'feedback';
+  document.getElementById('attemptsText').innerText = "Attempts: 0/3";
+  document.getElementById('canvas-container').style.display = 'none';
+
+  // Read Teacher Settings
+  let genType = document.getElementById('genType').value;
+  targetMethod = document.getElementById('roundMethod').value;
+  let targetType = document.getElementById('targetType').value;
+  let n = parseInt(document.getElementById('targetCount').value);
+
+  // Generate Number
+  if (genType === 'integer') {
+    currentNum = Math.floor(Math.random() * 9000) + 100; // 100 to 9100
+  } else {
+    currentNum = parseFloat((Math.random() * 1000).toFixed(4)); // 4 decimal places max
+  }
+
+  // Calculate Correct Answer & Bounds
+  let factor = 1;
+  let desc = "";
+
+  if (targetType === 'sigfig') {
+    if (currentNum === 0) factor = 1; 
+    else {
+      let mag = Math.floor(Math.log10(Math.abs(currentNum)));
+      factor = Math.pow(10, n - 1 - mag);
+    }
+    desc = `${n} Significant Figures`;
+  } else if (targetType === 'decimal') {
+    factor = Math.pow(10, n);
+    desc = `${n} Decimal Places`;
+  } else {
+    // Fixed places
+    if(targetType === 'integer') { factor = 1; desc = "Nearest Integer"; }
+    if(targetType === 'ten') { factor = 0.1; desc = "Nearest 10"; }
+    if(targetType === 'hundred') { factor = 0.01; desc = "Nearest 100"; }
+  }
+
+  // Bounds Logic
+  let scaledNum = currentNum * factor;
+  let scaledFloor = Math.floor(scaledNum);
+  let scaledCeil = Math.ceil(scaledNum);
+  
+  if (scaledFloor === scaledCeil) scaledCeil++;
+  else if (scaledCeil - scaledFloor > 1) scaledCeil = scaledFloor + 1;
+
+  lowerBound = parseFloat((scaledFloor / factor).toPrecision(12));
+  upperBound = parseFloat((scaledCeil / factor).toPrecision(12));
+  midPoint = parseFloat(((lowerBound + upperBound) / 2).toPrecision(12));
+
+  // Rounding Logic
+  if (targetMethod === 'off') {
+    correctAnswer = (currentNum >= midPoint) ? upperBound : lowerBound;
+  } else if (targetMethod === 'up') {
+    correctAnswer = Math.ceil(currentNum * factor) / factor;
+  } else if (targetMethod === 'down') {
+    correctAnswer = Math.floor(currentNum * factor) / factor;
+  }
+  correctAnswer = parseFloat(correctAnswer.toPrecision(12));
+
+  // Update UI
+  let mText = targetMethod === 'off' ? "Round OFF" : (targetMethod === 'up' ? "Round UP" : "Round DOWN");
+  document.getElementById('taskDescription').innerHTML = `Task: <b>${mText}</b> to <b>${desc}</b>`;
+  document.getElementById('numberDisplay').innerText = currentNum;
+  
+  redraw();
+}
+
+function checkAnswer() {
+  if (isSolved) return; // Prevent checking after done
+
+  let userVal = parseFloat(document.getElementById('studentAnswer').value);
+  let fb = document.getElementById('feedbackBox');
+  
+  if (isNaN(userVal)) {
+    fb.innerHTML = "Please enter a number!";
+    return;
+  }
+
+  attempts++;
+  document.getElementById('attemptsText').innerText = `Attempts: ${attempts}/3`;
+
+  if (userVal === correctAnswer) {
+    // CORRECT
+    isSolved = true;
+    showHint = true;
+    showFull = true;
+    fb.innerHTML = "✅ Correct! Well done.";
+    fb.className = "feedback correct";
+    document.getElementById('canvas-container').style.display = 'block';
+  } else {
+    // WRONG
+    if (attempts < 3) {
+      // Hints 1 & 2
+      fb.innerHTML = "❌ Not quite. Look at the number line!";
+      fb.className = "feedback wrong";
+      showHint = true; // Show line + bounds + user pos (no answer arrow)
+      document.getElementById('canvas-container').style.display = 'block';
+    } else {
+      // Hint 3 (Give Up)
+      isSolved = true;
+      showFull = true; // Reveal answer
+      fb.innerHTML = `❌ The correct answer is ${correctAnswer}.`;
+      fb.className = "feedback wrong";
+    }
+  }
+  
+  // Re-trigger CSS animation
+  void fb.offsetWidth; 
+  redraw();
+}
+
+// Helpers
+function toggleCount() {
+  let type = document.getElementById('targetType').value;
+  let box = document.getElementById('targetCount');
+  box.disabled = (type === 'integer' || type === 'ten' || type === 'hundred');
+}
+
+function drawTick(x, y, label, col) {
+  stroke(col); strokeWeight(3);
+  line(x, y-15, x, y+15);
+  fill(col); noStroke(); textSize(18); textStyle(BOLD);
+  text(label, x, y-30); textStyle(NORMAL);
+}
+
+function drawArrow(x, y, label, col, isUp) {
+  fill(col); noStroke();
+  let sz = 15;
+  if (isUp) {
+    triangle(x, y-20, x-sz, y, x+sz, y);
+    rect(x-sz/2, y, sz, 25);
+    textSize(20); textStyle(BOLD); text(label, x, y+45);
+  } else {
+    triangle(x, y+20, x-sz, y, x+sz, y);
+    rect(x-sz/2, y-25, sz, 25);
+    textSize(16); textStyle(NORMAL); text(label, x, y-40);
+  }
+}
+</script>
+</body>
+</html>
